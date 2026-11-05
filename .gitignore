@@ -5,3 +5,4 @@ __pycache__/
 # agent links made by sf_project_link-ai.bat; this repo is public
 .agent/
 CLAUDE.md
+work/

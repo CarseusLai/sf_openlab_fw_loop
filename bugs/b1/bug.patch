@@ -1,0 +1,11 @@
+--- a/app.cpp
++++ b/app.cpp
+@@ -25,7 +25,7 @@
+ static bool face_candidate = false;
+ 
+ static void start_blinks(unsigned long now) {
+-  blink_steps_left = BLINKS * 2;
++  blink_steps_left = BLINKS * 2 - 2;
+   blink_step_ms = now;
+   report_led(true);
+ }

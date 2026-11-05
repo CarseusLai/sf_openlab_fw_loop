@@ -1,0 +1,11 @@
+--- a/app.cpp
++++ b/app.cpp
+@@ -5,7 +5,7 @@
+ #include "app.h"
+ #include "report.h"
+ 
+-static const float SHAKE_G = 2.5f;
++static const float SHAKE_G = 24.5f;  // 2.5 g in m/s^2
+ static const unsigned long SHAKE_REFRACTORY_MS = 600;
+ static const int BLINKS = 3;
+ static const unsigned long BLINK_MS = 150;

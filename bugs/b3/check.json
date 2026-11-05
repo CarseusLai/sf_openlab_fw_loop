@@ -1,0 +1,26 @@
+{
+  "title": "燈亮著的時候搖一下，閃完要繼續亮",
+  "steps": [
+    {
+      "say": "請把板子翻面朝下放好",
+      "trigger": "FACE_DOWN",
+      "timeout_s": 20,
+      "window_s": 0.5,
+      "expect": {"led": "ON"}
+    },
+    {
+      "say": "請把板子翻回正面",
+      "trigger": "FACE_UP",
+      "timeout_s": 20,
+      "window_s": 0.5,
+      "expect": {"led": "ON"}
+    },
+    {
+      "say": "請拿起板子，用力搖一下，然後放回桌上",
+      "trigger": "SHAKE",
+      "timeout_s": 20,
+      "window_s": 1.5,
+      "expect": {"led": "ON"}
+    }
+  ]
+}

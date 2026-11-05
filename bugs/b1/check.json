@@ -1,0 +1,12 @@
+{
+  "title": "搖一下要快閃 3 下",
+  "steps": [
+    {
+      "say": "請拿起板子，用力搖一下，然後放回桌上",
+      "trigger": "SHAKE",
+      "timeout_s": 20,
+      "window_s": 1.2,
+      "expect": {"count": {"LED,ON": 3}}
+    }
+  ]
+}

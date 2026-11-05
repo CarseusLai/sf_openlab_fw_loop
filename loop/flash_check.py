@@ -91,6 +91,37 @@ def read_ready(port, timeout):
     return None
 
 
+class FlashError(Exception):
+    pass
+
+
+def flash(sketch, timeout=10, upload_timeout=180):
+    """Compile and upload; return (sketch port, bootloader port, compile s, upload s)."""
+    t0 = time.monotonic()
+    code = run_with_timeout([CLI, "compile", "--fqbn", FQBN, sketch], upload_timeout)
+    if code != 0:
+        raise FlashError("compile timed out" if code is None else f"compile exited {code}")
+    t_compile = time.monotonic() - t0
+
+    boot = enter_bootloader(timeout)
+    if not boot:
+        raise FlashError("no Nano 33 BLE found, or it did not enter the bootloader")
+
+    t1 = time.monotonic()
+    code = run_with_timeout([CLI, "upload", "--fqbn", FQBN, "--port", boot,
+                             "--upload-property", "upload.use_1200bps_touch=false",
+                             "--upload-property", "upload.wait_for_upload_port=false",
+                             sketch], upload_timeout)
+    if code != 0:
+        raise FlashError(f"upload on {boot} " + ("timed out, killed" if code is None else f"exited {code}"))
+    t_upload = time.monotonic() - t1
+
+    app = wait_for(APP_PID, timeout)
+    if not app:
+        raise FlashError("board did not come back after upload")
+    return app, boot, t_compile, t_upload
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sketch")
@@ -99,27 +130,10 @@ def main():
     args = ap.parse_args()
 
     t0 = time.monotonic()
-    code = run_with_timeout([CLI, "compile", "--fqbn", FQBN, args.sketch], args.upload_timeout)
-    if code != 0:
-        sys.exit("FAIL: compile timed out" if code is None else f"FAIL: compile exited {code}")
-    t_compile = time.monotonic() - t0
-
-    boot = enter_bootloader(args.timeout)
-    if not boot:
-        sys.exit("FAIL: no Nano 33 BLE found, or it did not enter the bootloader")
-
-    t1 = time.monotonic()
-    code = run_with_timeout([CLI, "upload", "--fqbn", FQBN, "--port", boot,
-                             "--upload-property", "upload.use_1200bps_touch=false",
-                             "--upload-property", "upload.wait_for_upload_port=false",
-                             args.sketch], args.upload_timeout)
-    if code != 0:
-        sys.exit(f"FAIL: upload on {boot} " + ("timed out, killed" if code is None else f"exited {code}"))
-    t_upload = time.monotonic() - t1
-
-    app = wait_for(APP_PID, args.timeout)
-    if not app:
-        sys.exit("FAIL: board did not come back after upload")
+    try:
+        app, boot, t_compile, t_upload = flash(args.sketch, args.timeout, args.upload_timeout)
+    except FlashError as e:
+        sys.exit(f"FAIL: {e}")
     line = read_ready(app, args.timeout)
     if not line:
         sys.exit(f"FAIL: no READY line on {app} within {args.timeout}s")

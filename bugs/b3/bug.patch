@@ -1,0 +1,11 @@
+--- a/app.cpp
++++ b/app.cpp
+@@ -37,7 +37,7 @@
+   blink_step_ms = now;
+   blink_steps_left--;
+   if (blink_steps_left == 0) {
+-    report_led(lamp_on);  // back to whatever the lamp was before the shake
++    report_led(false);  // blinking is over
+   } else {
+     report_led(blink_steps_left % 2 == 0);
+   }
