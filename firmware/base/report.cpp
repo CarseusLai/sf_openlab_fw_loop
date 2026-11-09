@@ -20,6 +20,13 @@ void report_event(const char *name) {
   Serial.println(name);
 }
 
+void report_motion(float peak_g) {
+  Serial.print("EVT,");
+  Serial.print(millis());
+  Serial.print(",MOTION,");
+  Serial.println(peak_g, 2);
+}
+
 void report_led(bool on) {
   if (on == led_state) {
     return;  // only real changes count as events

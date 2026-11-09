@@ -1,7 +1,7 @@
 // Behaviour under test: shake -> 3 quick blinks, turn face down -> lamp toggles.
 // Thresholds come from firmware/calibrate (2026-11-02): rest 1.01 g, pick up or
 // put down under 1.5 g, a hard shake over 4 g.
-#include <Arduino_BMI270_BMM150.h>
+#include <Arduino.h>
 #include "app.h"
 #include "report.h"
 
@@ -82,15 +82,10 @@ static void check_face(float z, unsigned long now) {
 }
 
 void app_setup() {
-  if (!IMU.begin()) {
-    report_event("ERR_IMU");
-  }
 }
 
-void app_loop() {
-  unsigned long now = millis();
-  float x, y, z;
-  if (IMU.accelerationAvailable() && IMU.readAcceleration(x, y, z)) {
+void app_loop(bool fresh, float x, float y, float z, unsigned long now) {
+  if (fresh) {
     check_shake(sqrtf(x * x + y * y + z * z), now);
     check_face(z, now);  // face up (components on top) reads z = +1.01 g (firmware/calibrate)
   }

@@ -1,6 +1,6 @@
-"""Copy the base firmware to work/<bug>/base and apply bugs/<bug>/bug.patch to it.
+"""Copy the base firmware and apply bugs/<bug>/bug.patch to the copy.
 
-Usage: python loop/make_variant.py b1      -> prints the sketch folder to flash
+Usage: python loop/make_variant.py b1      -> builds work/b1/base and prints it
 """
 import shutil
 import subprocess
@@ -10,8 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def make_variant(bug_id):
-    sketch = ROOT / "work" / bug_id / "base"   # folder name must match base.ino
+def make_variant(bug_id, parent=None):
+    """Return the sketch folder <parent>/base (default parent: work/<bug>)."""
+    sketch = Path(parent or ROOT / "work" / bug_id) / "base"   # folder name must match base.ino
     if sketch.exists():
         shutil.rmtree(sketch)
     shutil.copytree(ROOT / "firmware" / "base", sketch)

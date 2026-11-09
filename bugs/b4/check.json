@@ -1,0 +1,47 @@
+{
+  "title": "搖完燈要回到原本的狀態",
+  "steps": [
+    {
+      "say": "請拿起板子，用力搖一下，然後正面朝上放回桌上",
+      "trigger": "SHAKE",
+      "timeout_s": 20,
+      "window_s": 2.0,
+      "expect": {"led": "OFF"}
+    },
+    {
+      "say": "再拿起來用力搖一下，然後正面朝上放回",
+      "trigger": "SHAKE",
+      "timeout_s": 20,
+      "window_s": 2.0,
+      "expect": {"led": "OFF"}
+    },
+    {
+      "say": "再拿起來用力搖一下，然後正面朝上放回",
+      "trigger": "SHAKE",
+      "timeout_s": 20,
+      "window_s": 2.0,
+      "expect": {"led": "OFF"}
+    },
+    {
+      "say": "請把板子翻面朝下放好",
+      "trigger": "FACE_DOWN",
+      "timeout_s": 20,
+      "window_s": 0.5,
+      "expect": {"led": "ON"}
+    },
+    {
+      "say": "請把板子翻回正面",
+      "trigger": "FACE_UP",
+      "timeout_s": 20,
+      "window_s": 0.5,
+      "expect": {"led": "ON"}
+    },
+    {
+      "say": "最後一次，拿起來用力搖一下，然後正面朝上放回",
+      "trigger": "SHAKE",
+      "timeout_s": 20,
+      "window_s": 2.0,
+      "expect": {"led": "ON"}
+    }
+  ]
+}

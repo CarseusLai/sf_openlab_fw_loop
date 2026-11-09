@@ -9,11 +9,13 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 from flash_check import FlashError, flash, open_board
 
 VOICE = "Microsoft Hanhan Desktop"
+PASS, FAIL, RETRY = "PASS", "FAIL", "RETRY"
 
 
 def say(text):
@@ -54,6 +56,15 @@ def judge(step, events, trigger_at, led):
     return ""
 
 
+def no_trigger(step, events, step_start):
+    """The trigger never came. The locked MOTION witness says whether the person moved the board:
+    moved -> the firmware missed it (FAIL); not moved -> nobody's fault, do it again (RETRY)."""
+    peaks = [float(k.split(",")[1]) for t, k in events if t >= step_start and k.startswith("MOTION,")]
+    if peaks:
+        return FAIL, f"板子有被動到（最大 {max(peaks):.1f} g），但韌體沒有回報 {step['trigger']}"
+    return RETRY, f"{step.get('timeout_s', 20)} 秒內板子都沒有被動到，請重做"
+
+
 def run(check, sketch, timeout=10):
     app, _, _, _ = flash(sketch)
     events, led = [], "OFF"
@@ -78,18 +89,22 @@ def run(check, sketch, timeout=10):
             if ser.readline().decode("utf-8", "replace").startswith("READY"):
                 break
         else:
-            return False, "燒錄後沒收到 READY"
+            return FAIL, "燒錄後沒收到 READY"
 
         for i, step in enumerate(check["steps"], 1):
-            say(step["say"])
-            trigger_at = read_until(time.monotonic() + step.get("timeout_s", 20), step["trigger"])
+            # Speak in the background: a blocking say() left the port unread for ~5 s, and
+            # lines sent meanwhile were stamped with the time they were read, not sent.
+            step_start = time.monotonic()
+            threading.Thread(target=say, args=(step["say"],), daemon=True).start()
+            trigger_at = read_until(step_start + step.get("timeout_s", 20), step["trigger"])
             if trigger_at is None:
-                return False, f"第 {i} 步：等了 {step.get('timeout_s', 20)} 秒沒偵測到 {step['trigger']}"
+                verdict, why = no_trigger(step, events, step_start)
+                return verdict, f"第 {i} 步：{why}"
             read_until(trigger_at + step.get("window_s", 1.0))
             why = judge(step, events, trigger_at, led)
             if why:
-                return False, f"第 {i} 步：{why}"
-    return True, ""
+                return FAIL, f"第 {i} 步：{why}"
+    return PASS, ""
 
 
 def main():
@@ -97,11 +112,11 @@ def main():
     with open(check_path, encoding="utf-8") as f:
         check = json.load(f)
     try:
-        ok, why = run(check, sketch)
+        verdict, why = run(check, sketch)
     except FlashError as e:
-        ok, why = False, f"燒錄失敗：{e}"
-    print(f"PASS: {check['title']}" if ok else f"FAIL: {check['title']} — {why}")
-    sys.exit(0 if ok else 1)
+        verdict, why = FAIL, f"燒錄失敗：{e}"
+    print(f"{verdict}: {check['title']}" + (f" — {why}" if why else ""))
+    sys.exit({PASS: 0, FAIL: 1, RETRY: 2}[verdict])
 
 
 if __name__ == "__main__":

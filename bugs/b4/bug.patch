@@ -1,0 +1,11 @@
+--- a/app.cpp
++++ b/app.cpp
+@@ -10,7 +10,7 @@
+ static const int BLINKS = 3;
+ static const unsigned long BLINK_MS = 150;
+ static const float FACE_G = 0.7f;
+-static const unsigned long FACE_HOLD_MS = 300;
++static const unsigned long FACE_HOLD_MS = 0;
+ 
+ static bool lamp_on = false;
+ 
