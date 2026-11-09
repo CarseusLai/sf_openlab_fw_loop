@@ -99,7 +99,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("bug")
     ap.add_argument("--model", default="sonnet")
-    ap.add_argument("--fixer", choices=("claude-code", "mixroute"), default="claude-code")
+    ap.add_argument("--fixer", choices=("claude-code", "mixroute"), default="mixroute")
     ap.add_argument("--ladder", default=f"{mixroute.AUTO},claude-sonnet-5-5",
                     help="MixRoute models to try in order; 'auto' is Smart Routing")
     args = ap.parse_args()

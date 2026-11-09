@@ -4,8 +4,8 @@ Usage: python loop/flash_check.py firmware/blink [--timeout 10]
 Set ARDUINO_CLI to the arduino-cli executable if it is not on PATH.
 """
 import argparse
-import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -98,28 +98,52 @@ class FlashError(Exception):
     pass
 
 
-def build_dir(sketch):
-    """A build folder named after the sketch's contents.
+BUILD = Path(tempfile.gettempdir()) / "openlab-build"
 
-    arduino-cli caches builds per sketch path; after files at the same path changed, it
-    reused stale objects (2026-11-09: a rebuilt variant reported a fixed 4.57 g motion
-    every 2.8 s while untouched, gone after --clean). Same contents -> same folder (fast),
-    any change -> a fresh folder, so the board always gets the code that is on disk.
+
+def clear_sketch_objects(build):
+    """Drop the sketch's own objects so they are always rebuilt from disk; keep core and libraries.
+
+    arduino-cli reused stale sketch objects after files at the same path changed (2026-11-09:
+    a rebuilt variant reported a fixed 4.57 g motion every 2.8 s while untouched, gone after
+    --clean). Core and libraries never change here and cost ~30 of a fresh build's 43.6 s;
+    rebuilding only sketch/ took 12.8 s, also for a sketch at another path.
     """
-    h = hashlib.sha1()
+    shutil.rmtree(Path(build) / "sketch", ignore_errors=True)
+
+
+def compiled_copy_mismatch(sketch, build):
+    """Names of sketch files whose copy in the build folder differs from the file on disk.
+
+    arduino-cli copies each file with `#line 1 "<source path>"` added on top; that line must
+    name this very file, and the rest must equal it.
+    """
+    bad = []
     for p in sorted(Path(sketch).iterdir()):
-        if p.is_file():
-            h.update(p.name.encode() + b"\0" + p.read_bytes().replace(b"\r\n", b"\n") + b"\0")
-    return Path(tempfile.gettempdir()) / "openlab-build" / h.hexdigest()[:16]
+        if p.suffix not in (".cpp", ".h"):   # .ino is rewritten into .ino.cpp, so it cannot be compared
+            continue
+        copy = Path(build) / "sketch" / p.name
+        if not copy.is_file():
+            bad.append(p.name)
+            continue
+        head, _, body = copy.read_bytes().replace(b"\r\n", b"\n").partition(b"\n")
+        marker = b'#line 1 "' + str(p.resolve()).replace("\\", "\\\\").encode() + b'"'
+        if head.lower() != marker.lower() or body != p.read_bytes().replace(b"\r\n", b"\n"):
+            bad.append(p.name)
+    return bad
 
 
 def flash(sketch, timeout=10, upload_timeout=180):
     """Compile and upload; return (sketch port, bootloader port, compile s, upload s)."""
-    build = str(build_dir(sketch))
+    build = str(BUILD)
+    clear_sketch_objects(build)
     t0 = time.monotonic()
     code = run_with_timeout([CLI, "compile", "--fqbn", FQBN, "--build-path", build, sketch], upload_timeout)
     if code != 0:
         raise FlashError("compile timed out" if code is None else f"compile exited {code}")
+    stale = compiled_copy_mismatch(sketch, build)
+    if stale:
+        raise FlashError(f"compiled copy differs from the files on disk: {', '.join(stale)}")
     t_compile = time.monotonic() - t0
 
     boot = enter_bootloader(timeout)
