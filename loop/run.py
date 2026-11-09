@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import check
+import gate
 import mixroute
 from make_variant import ROOT, make_variant
 
@@ -80,6 +81,15 @@ def judge(run, chk, sketch, name):
     return verdict, why
 
 
+def gate_ok(run, sketch, before, after, name):
+    """Run the gate; record it as a stage. Return "" when the change may be flashed, else why not."""
+    t = time.monotonic()
+    reasons = gate.check(ROOT / "firmware" / "base", sketch, before, after)
+    run.stage(name, not reasons, time.monotonic() - t, verdict="PASS" if not reasons else "FAIL",
+              why="；".join(reasons))
+    return "；".join(reasons)
+
+
 def mixroute_ladder(run, sketch, ticket, chk, ladder):
     """Try each model in turn on the planted bug; the board's verdict decides whether to go up a step."""
     buggy = (sketch / "app.cpp").read_text(encoding="utf-8")
@@ -101,6 +111,11 @@ def mixroute_ladder(run, sketch, ticket, chk, ladder):
             feedback = "Your previous answer did not contain a changed app.cpp."
             continue
         (sketch / "app.cpp").write_text(code, encoding="utf-8")
+        refused = gate_ok(run, sketch, buggy, code, f"gate{i}")
+        if refused:
+            feedback = f"A previous attempt ({reported}) was refused before flashing: {refused}"
+            verdict, why = check.FAIL, f"閘門擋下：{refused}"
+            continue
         verdict, why = judge(run, chk, sketch, f"check{i}")
         if verdict != check.FAIL:
             return verdict, why          # PASS, or RETRY: nobody moved the board, so no verdict on the fix
@@ -146,6 +161,10 @@ def main():
               turns=reply.get("num_turns"), summary=str(reply.get("result", ""))[:300])
     if not ok:
         run.finish("FAIL", "AI 沒有改到 app.cpp" if not diff else "AI 回報錯誤")
+        sys.exit(1)
+    refused = gate_ok(run, sketch, before, after, "gate")
+    if refused:
+        run.finish("FAIL", f"閘門擋下：{refused}")
         sys.exit(1)
 
     with open(bug_dir / "check.json", encoding="utf-8") as f:

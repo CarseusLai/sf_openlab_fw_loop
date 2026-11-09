@@ -88,6 +88,12 @@ function stageHtml(s) {
       <p class="said">AI 說：「${esc(s.summary)}」</p>
       ${s.diff ? `<details><summary>它改了什麼</summary><pre>${diffHtml(s.diff)}</pre></details>` : ""}</div>`;
   }
+  if (s.name.startsWith("gate")) {
+    return s.ok
+      ? `<div class="card"><span class="meta">🚧 閘門通過：沒碰鎖住的檔、沒有偽造回報、改動在上限內，送去燒錄</span></div>`
+      : `<div class="card"><div class="row"><span class="who">🚧 閘門</span><span class="chip FAIL">擋下</span>
+         <span class="meta">不燒錄</span></div><p class="why FAIL">${esc(s.why)}</p></div>`;
+  }
   const v = s.verdict || (s.ok ? "PASS" : "FAIL");
   return `<div class="card"><div class="row"><span class="who">🔌 板子</span>
     <span class="chip ${v}">${v}</span><span class="meta">${s.s} 秒（燒錄＋檢查）</span></div>
