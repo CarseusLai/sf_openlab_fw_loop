@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import check
+import mixroute
 from make_variant import ROOT, make_variant
 
 FIX_TIMEOUT_S = 300
@@ -56,10 +57,51 @@ def ask_fixer(sketch, ticket, model):
         return {"is_error": True, "result": (r.stderr or r.stdout).decode("utf-8", "replace")[-500:]}
 
 
+def judge(run, chk, sketch, name):
+    t = time.monotonic()
+    try:
+        verdict, why = check.run(chk, str(sketch))
+    except check.FlashError as e:
+        verdict, why = check.FAIL, f"燒錄失敗：{e}"
+    run.stage(name, verdict == check.PASS, time.monotonic() - t, verdict=verdict, why=why)
+    return verdict, why
+
+
+def mixroute_ladder(run, sketch, ticket, chk, ladder):
+    """Try each model in turn on the planted bug; the board's verdict decides whether to go up a step."""
+    buggy = (sketch / "app.cpp").read_text(encoding="utf-8")
+    feedback, verdict, why = "", check.FAIL, ""
+    for i, model in enumerate(ladder, 1):
+        t = time.monotonic()
+        try:
+            code, summary, reported, usage = mixroute.fix(model, ticket, buggy, feedback)
+        except mixroute.MixRouteError as e:
+            run.stage(f"fix{i}", False, time.monotonic() - t, model=model, summary=str(e))
+            continue
+        diff = "".join(difflib.unified_diff(buggy.splitlines(True), (code or "").splitlines(True),
+                                            "a/app.cpp", "b/app.cpp"))
+        (run.dir / f"fix{i}.diff").write_text(diff, encoding="utf-8")
+        run.stage(f"fix{i}", bool(code and diff), time.monotonic() - t, model=model, answered_by=reported,
+                  tokens=usage.get("total_tokens"), summary=summary)
+        if not (code and diff):
+            feedback = "Your previous answer did not contain a changed app.cpp."
+            continue
+        (sketch / "app.cpp").write_text(code, encoding="utf-8")
+        verdict, why = judge(run, chk, sketch, f"check{i}")
+        if verdict != check.FAIL:
+            return verdict, why          # PASS, or RETRY: nobody moved the board, so no verdict on the fix
+        # Every retry starts from the buggy code and hears what the last attempt changed and what the board said.
+        feedback = f"A previous attempt ({reported}) changed:\n{diff}\nOn the board it failed: {why}"
+    return verdict, why
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("bug")
     ap.add_argument("--model", default="sonnet")
+    ap.add_argument("--fixer", choices=("claude-code", "mixroute"), default="claude-code")
+    ap.add_argument("--ladder", default=f"{mixroute.AUTO},claude-sonnet-5-5",
+                    help="MixRoute models to try in order; 'auto' is Smart Routing")
     args = ap.parse_args()
     bug_dir = ROOT / "bugs" / args.bug
     run = Run(args.bug)
@@ -69,6 +111,15 @@ def main():
     sketch = make_variant(args.bug, tempfile.mkdtemp(prefix="openlab-fix-"))
     before = (sketch / "app.cpp").read_text(encoding="utf-8")
     run.stage("prepare", True, time.monotonic() - t, workspace=str(sketch))
+
+    if args.fixer == "mixroute":
+        with open(bug_dir / "check.json", encoding="utf-8") as f:
+            chk = json.load(f)
+        verdict, why = mixroute_ladder(run, sketch, (bug_dir / "ticket.md").read_text(encoding="utf-8"),
+                                       chk, args.ladder.split(","))
+        run.finish(verdict, why)
+        print(f"{verdict}: {args.bug} {why}  ({run.dir})")
+        sys.exit({check.PASS: 0, check.FAIL: 1, check.RETRY: 2}[verdict])
 
     t = time.monotonic()
     reply = ask_fixer(sketch, (bug_dir / "ticket.md").read_text(encoding="utf-8"), args.model)
@@ -83,14 +134,9 @@ def main():
         run.finish("FAIL", "AI 沒有改到 app.cpp" if not diff else "AI 回報錯誤")
         sys.exit(1)
 
-    t = time.monotonic()
     with open(bug_dir / "check.json", encoding="utf-8") as f:
         chk = json.load(f)
-    try:
-        verdict, why = check.run(chk, str(sketch))
-    except check.FlashError as e:
-        verdict, why = check.FAIL, f"燒錄失敗：{e}"
-    run.stage("check", verdict == check.PASS, time.monotonic() - t, verdict=verdict, why=why)
+    verdict, why = judge(run, chk, sketch, "check")
     run.finish(verdict, why)
     print(f"{verdict}: {args.bug} {why}  ({run.dir})")
     sys.exit({check.PASS: 0, check.FAIL: 1, check.RETRY: 2}[verdict])
