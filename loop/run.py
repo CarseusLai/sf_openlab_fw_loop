@@ -26,11 +26,22 @@ class Run:
     def __init__(self, bug_id):
         self.dir = ROOT / "runs" / f"{time.strftime('%Y%m%d-%H%M%S')}-{bug_id}"
         self.dir.mkdir(parents=True)
-        self.status = {"bug": bug_id, "stages": [], "result": "RUNNING"}
+        self.status = {"bug": bug_id, "stages": [], "result": "RUNNING", "doing": "", "say": ""}
         self.save()
 
     def save(self):
-        (self.dir / "status.json").write_text(json.dumps(self.status, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Write then rename, so the status page never reads a half-written file.
+        tmp = self.dir / "status.json.tmp"
+        tmp.write_text(json.dumps(self.status, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(self.dir / "status.json")
+
+    def doing(self, text):
+        self.status["doing"] = text
+        self.save()
+
+    def say(self, text):
+        self.status["say"] = text
+        self.save()
 
     def stage(self, name, ok, seconds, **info):
         self.status["stages"].append({"name": name, "ok": ok, "s": round(seconds, 1), **info})
@@ -39,6 +50,7 @@ class Run:
 
     def finish(self, result, why=""):
         self.status["result"], self.status["why"] = result, why
+        self.status["doing"] = self.status["say"] = ""
         self.save()
 
 
@@ -59,8 +71,9 @@ def ask_fixer(sketch, ticket, model):
 
 def judge(run, chk, sketch, name):
     t = time.monotonic()
+    run.doing("燒錄到板子，然後由板子判定")
     try:
-        verdict, why = check.run(chk, str(sketch))
+        verdict, why = check.run(chk, str(sketch), on_say=run.say)
     except check.FlashError as e:
         verdict, why = check.FAIL, f"燒錄失敗：{e}"
     run.stage(name, verdict == check.PASS, time.monotonic() - t, verdict=verdict, why=why)
@@ -73,6 +86,7 @@ def mixroute_ladder(run, sketch, ticket, chk, ladder):
     feedback, verdict, why = "", check.FAIL, ""
     for i, model in enumerate(ladder, 1):
         t = time.monotonic()
+        run.doing(f"AI 修 bug 中（{'MixRoute Smart Routing' if model == mixroute.AUTO else model}）")
         try:
             code, summary, reported, usage = mixroute.fix(model, ticket, buggy, feedback)
         except mixroute.MixRouteError as e:
@@ -82,7 +96,7 @@ def mixroute_ladder(run, sketch, ticket, chk, ladder):
                                             "a/app.cpp", "b/app.cpp"))
         (run.dir / f"fix{i}.diff").write_text(diff, encoding="utf-8")
         run.stage(f"fix{i}", bool(code and diff), time.monotonic() - t, model=model, answered_by=reported,
-                  tokens=usage.get("total_tokens"), summary=summary)
+                  tokens=usage.get("total_tokens"), summary=summary, diff=diff[:4000])
         if not (code and diff):
             feedback = "Your previous answer did not contain a changed app.cpp."
             continue
@@ -143,4 +157,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:   # keep the status page from showing RUNNING forever after a crash
+        import traceback
+        traceback.print_exc()
+        latest = max((ROOT / "runs").glob("*/status.json"), key=lambda p: p.stat().st_mtime, default=None)
+        if latest:
+            st = json.loads(latest.read_text(encoding="utf-8"))
+            if st.get("result") == "RUNNING":
+                st.update(result="ERROR", why=f"{type(e).__name__}: {e}", doing="", say="")
+                latest.write_text(json.dumps(st, ensure_ascii=False, indent=2), encoding="utf-8")
+        sys.exit(3)

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>板子說了才算</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --line: #2a2f3a; --text: #e8e6e1; --muted: #9aa0ab;
+    --pass: #3ecf8e; --fail: #ff6b6b; --retry: #f5c451; --accent: #7aa2ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 18px/1.55 "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 30px; margin: 0; letter-spacing: .02em; }
+  .sub { color: var(--muted); margin: 4px 0 20px; }
+  .now { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 18px 22px; margin-bottom: 20px; }
+  .now .doing { color: var(--muted); font-size: 20px; min-height: 1.5em; }
+  .now .say { font-size: 44px; font-weight: 700; margin-top: 6px; min-height: 0; }
+  .now.act { border-color: var(--retry); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(245,196,81,.18); } }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .now .say { font-size: 32px; } }
+  section h2 { font-size: 16px; color: var(--muted); font-weight: 600; margin: 0 0 10px; letter-spacing: .06em; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .who { font-weight: 700; font-size: 20px; }
+  .meta { color: var(--muted); font-size: 15px; }
+  .chip { font-weight: 700; font-size: 14px; padding: 2px 10px; border-radius: 999px; border: 1px solid currentColor; }
+  .PASS { color: var(--pass); } .FAIL, .ERROR { color: var(--fail); } .RETRY { color: var(--retry); } .RUNNING { color: var(--accent); }
+  .said { margin: 8px 0 0; }
+  .why { margin: 8px 0 0; font-size: 20px; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--accent); font-size: 15px; }
+  pre { background: #0b0d11; border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto;
+        font: 14px/1.45 Consolas, "Cascadia Mono", monospace; margin: 8px 0 0; }
+  .add { color: var(--pass); } .del { color: var(--fail); }
+  .banner { border-radius: 12px; padding: 16px 18px; font-size: 26px; font-weight: 800; margin-bottom: 12px; border: 2px solid currentColor; }
+  button.bug { width: 100%; text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+               border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; font: inherit; cursor: pointer; }
+  button.bug:hover:not(:disabled) { border-color: var(--accent); }
+  button.bug:disabled { opacity: .45; cursor: not-allowed; }
+  button.bug b { display: block; font-size: 18px; }
+  button.bug span { color: var(--muted); font-size: 15px; }
+  .hist { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .hist:last-child { border-bottom: 0; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>板子說了才算</h1>
+  <p class="sub">AI 說修好了不算數：改好的韌體燒進 Arduino，由板子回報、由人寫好的檢查判定。</p>
+
+  <div class="now" id="now"><div class="doing" id="doing">待命中</div><div class="say" id="say"></div></div>
+
+  <div class="grid">
+    <section>
+      <h2>這一輪</h2>
+      <div id="run"><p class="empty">還沒有執行紀錄。按右邊的 bug 開始一輪。</p></div>
+    </section>
+    <section>
+      <h2>挑一個 bug</h2>
+      <div id="bugs"></div>
+      <h2 style="margin-top:18px">最近幾輪</h2>
+      <div class="card" id="hist"></div>
+    </section>
+  </div>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const label = {PASS: "✅ 板子判定：通過", FAIL: "❌ 板子判定：沒過", RETRY: "⏸ 沒偵測到動作，請重做",
+               RUNNING: "⏳ 進行中", ERROR: "⚠️ 程式出錯，這一輪沒有結果"};
+
+function diffHtml(d) {
+  return d.split("\n").filter(l => !l.startsWith("---") && !l.startsWith("+++")).map(l =>
+    l.startsWith("+") ? `<span class="add">${esc(l)}</span>` :
+    l.startsWith("-") ? `<span class="del">${esc(l)}</span>` : esc(l)).join("\n");
+}
+
+function stageHtml(s) {
+  if (s.name === "prepare") return "";
+  if (s.name.startsWith("fix")) {
+    const who = s.model === "auto" ? `MixRoute Smart Routing → ${esc(s.answered_by || "?")}` : esc(s.answered_by || s.model);
+    return `<div class="card"><div class="row"><span class="who">🤖 ${who}</span>
+      <span class="meta">${s.s} 秒${s.tokens ? ` · ${s.tokens} tokens` : ""}</span></div>
+      <p class="said">AI 說：「${esc(s.summary)}」</p>
+      ${s.diff ? `<details><summary>它改了什麼</summary><pre>${diffHtml(s.diff)}</pre></details>` : ""}</div>`;
+  }
+  const v = s.verdict || (s.ok ? "PASS" : "FAIL");
+  return `<div class="card"><div class="row"><span class="who">🔌 板子</span>
+    <span class="chip ${v}">${v}</span><span class="meta">${s.s} 秒（燒錄＋檢查）</span></div>
+    ${s.why ? `<p class="why ${v}">${esc(s.why)}</p>` : ""}</div>`;
+}
+
+async function refresh() {
+  let st;
+  try { st = await (await fetch("/api/status")).json(); } catch { return; }
+  const cur = st.runs[0];
+  const live = st.running && cur && cur.result === "RUNNING";
+  const now = document.getElementById("now");
+  document.getElementById("doing").textContent = live ? (cur.doing || "進行中") : "待命中";
+  document.getElementById("say").textContent = live ? (cur.say || "") : "";
+  now.classList.toggle("act", Boolean(live && cur.say));
+
+  const bugs = Object.fromEntries(st.bugs.map(b => [b.id, b]));
+  document.getElementById("run").innerHTML = cur ? `
+    <div class="banner ${cur.result}">${label[cur.result] || esc(cur.result)}</div>
+    ${cur.result === "ERROR" ? `<div class="card"><p class="why FAIL">${esc(cur.why)}</p></div>` : ""}
+    <div class="card"><div class="row"><span class="who">🐞 ${esc(cur.bug)}：${esc(bugs[cur.bug]?.title)}</span></div>
+      <p class="said">使用者回報：「${esc(bugs[cur.bug]?.ticket)}」</p></div>
+    ${cur.stages.map(stageHtml).join("")}` : `<p class="empty">還沒有執行紀錄。</p>`;
+
+  document.getElementById("bugs").innerHTML = st.bugs.map(b =>
+    `<button class="bug" data-bug="${esc(b.id)}" ${st.running ? "disabled" : ""}>
+       <b>${esc(b.id)}：${esc(b.title)}</b><span>${esc(b.ticket)}</span></button>`).join("");
+  document.getElementById("hist").innerHTML = st.runs.length ? st.runs.map(r =>
+    `<div class="hist"><span>${esc(r.id)}</span><span class="${r.result}">${esc(r.result)}</span></div>`).join("")
+    : `<span class="empty">無</span>`;
+}
+
+document.getElementById("bugs").addEventListener("click", async e => {
+  const b = e.target.closest("button.bug");
+  if (!b || b.disabled) return;
+  await fetch("/api/run", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({bug: b.dataset.bug})});
+  refresh();
+});
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

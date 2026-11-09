@@ -65,7 +65,16 @@ def no_trigger(step, events, step_start):
     return RETRY, f"{step.get('timeout_s', 20)} 秒內板子都沒有被動到，請重做"
 
 
-def run(check, sketch, timeout=10):
+def run(check, sketch, timeout=10, on_say=None):
+    """on_say(text) is told each instruction as it is spoken, and "" when the check ends."""
+    try:
+        return _run(check, sketch, timeout, on_say or (lambda text: None))
+    finally:
+        if on_say:
+            on_say("")
+
+
+def _run(check, sketch, timeout, on_say):
     app, _, _, _ = flash(sketch)
     events, led = [], "OFF"
     with open_board(app) as ser:
@@ -95,6 +104,7 @@ def run(check, sketch, timeout=10):
             # Speak in the background: a blocking say() left the port unread for ~5 s, and
             # lines sent meanwhile were stamped with the time they were read, not sent.
             step_start = time.monotonic()
+            on_say(step["say"])
             threading.Thread(target=say, args=(step["say"],), daemon=True).start()
             trigger_at = read_until(step_start + step.get("timeout_s", 20), step["trigger"])
             if trigger_at is None:
