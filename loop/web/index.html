@@ -21,6 +21,11 @@
   .now .say { font-size: 44px; font-weight: 700; margin-top: 6px; min-height: 0; }
   .now.act { border-color: var(--retry); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(245,196,81,.18); } }
+  .board { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+  .board:empty { display: none; }
+  .board .lbl { color: var(--muted); font-size: 15px; }
+  .board .ev { background: #0b0d11; border: 1px solid var(--line); border-radius: 8px; padding: 3px 10px; font-size: 16px; }
+  .board .ev:last-child { border-color: var(--accent); }
   .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
   @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .now .say { font-size: 32px; } }
   section h2 { font-size: 16px; color: var(--muted); font-weight: 600; margin: 0 0 10px; letter-spacing: .06em; }
@@ -53,7 +58,7 @@
   <h1>板子說了才算</h1>
   <p class="sub">AI 說修好了不算數：改好的韌體燒進 Arduino，由板子回報、由人寫好的檢查判定。</p>
 
-  <div class="now" id="now"><div class="doing" id="doing">待命中</div><div class="say" id="say"></div></div>
+  <div class="now" id="now"><div class="doing" id="doing">待命中</div><div class="say" id="say"></div><div class="board" id="board"></div></div>
 
   <div class="grid">
     <section>
@@ -72,6 +77,13 @@
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const label = {PASS: "✅ 板子判定：通過", FAIL: "❌ 板子判定：沒過", RETRY: "⏸ 沒偵測到動作，請重做",
                RUNNING: "⏳ 進行中", ERROR: "⚠️ 程式出錯，這一輪沒有結果"};
+
+// What the board reported over USB serial, in words. MOTION comes from the locked witness, the rest from the firmware.
+function boardText(k) {
+  if (k.startsWith("MOTION,")) return `📳 動作見證：搖到 ${Number(k.split(",")[1]).toFixed(1)} g`;
+  return {"SHAKE": "👋 韌體：有搖到", "LED,ON": "💡 燈亮", "LED,OFF": "⚫ 燈滅", "FACE_DOWN": "🔄 韌體：翻面朝下",
+          "FACE_UP": "🔄 韌體：翻回正面", "ERR_IMU": "⚠️ 加速度計沒啟動"}[k] || k;
+}
 
 function diffHtml(d) {
   return d.split("\n").filter(l => !l.startsWith("---") && !l.startsWith("+++")).map(l =>
@@ -109,6 +121,10 @@ async function refresh() {
   document.getElementById("doing").textContent = live ? (cur.doing || "進行中") : "待命中";
   document.getElementById("say").textContent = live ? (cur.say || "") : "";
   now.classList.toggle("act", Boolean(live && cur.say));
+  const board = live && cur.board && cur.board.length ? cur.board : [];
+  document.getElementById("board").innerHTML = board.length
+    ? `<span class="lbl">板子回報：</span>` + board.map(e => `<span class="ev" title="${esc(e.at)}">${esc(boardText(e.key))}</span>`).join("")
+    : "";
 
   const bugs = Object.fromEntries(st.bugs.map(b => [b.id, b]));
   document.getElementById("run").innerHTML = cur ? `

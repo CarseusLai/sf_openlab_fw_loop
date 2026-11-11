@@ -1,10 +1,18 @@
 {
-  "title": "用力搖要有反應",
+  "title": "搖一下要有反應",
   "steps": [
     {
       "say": "請拿起板子，用力搖一下，然後放回桌上",
       "trigger": "SHAKE",
       "timeout_s": 20,
+      "window_s": 1.2,
+      "expect": {"count": {"LED,ON": 3}}
+    },
+    {
+      "say": "現在請輕輕搖一下，不要太用力，然後放回桌上",
+      "trigger": "MOTION",
+      "peak": [2.6, 3.8],
+      "timeout_s": 45,
       "window_s": 1.2,
       "expect": {"count": {"LED,ON": 3}}
     }

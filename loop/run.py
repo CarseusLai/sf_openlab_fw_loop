@@ -44,6 +44,11 @@ class Run:
         self.status["say"] = text
         self.save()
 
+    def board(self, key):
+        """Show the status page what the board just reported; the last few are enough to follow along."""
+        self.status["board"] = (self.status.get("board", []) + [{"at": time.strftime("%H:%M:%S"), "key": key}])[-12:]
+        self.save()
+
     def stage(self, name, ok, seconds, **info):
         self.status["stages"].append({"name": name, "ok": ok, "s": round(seconds, 1), **info})
         print(f"[{name}] {'ok' if ok else 'FAILED'} {seconds:.1f}s {info}", flush=True)
@@ -72,9 +77,10 @@ def ask_fixer(sketch, ticket, model):
 
 def judge(run, chk, sketch, name):
     t = time.monotonic()
+    run.status["board"] = []   # each flash starts a fresh board; earlier events belong to the last attempt
     run.doing("燒錄到板子，然後由板子判定")
     try:
-        verdict, why = check.run(chk, str(sketch), on_say=run.say)
+        verdict, why = check.run(chk, str(sketch), on_say=run.say, on_event=run.board)
     except check.FlashError as e:
         verdict, why = check.FAIL, f"燒錄失敗：{e}"
     run.stage(name, verdict == check.PASS, time.monotonic() - t, verdict=verdict, why=why)
